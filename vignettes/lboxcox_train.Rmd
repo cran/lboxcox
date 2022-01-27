@@ -1,0 +1,74 @@
+---
+title: "lboxcox: an R package for the logistic Box-Cox model"
+author:
+  - Li Xing, Kohlton Booth, Xuekui Zhang, Igor Burstyn, Paul Gustafson
+date:
+  - 2022-01-22
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{lboxcox_train}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+## Introduction
+The lboxcox package is developed based on our recent research publication (Xing et. al [[2]](#2)). We proposed a logistic Box-Cox model by adding a shape parameter to a routine logistic regression model to handle a more flexible relationship between log odds and its systematic component. Below we provide instructions for users on how to fit the logistic Box-Cox model using our lboxcox package. 
+
+## Data Example
+```{r setup}
+library(lboxcox)
+```
+
+In the library, there is a dataset called depress. It was from the National Health and Nutrition Examination Survey (NHANES) (Xing et. al [[2]](#2)). The outcome is a binary indicator for depression in the data, and the main predictor is the blood mercury level, which requires an extra shape parameter to accommodate the nonlinear association. And the other variables are age, gender, and weight. The weight variable contains sampling weights, which would be used to adjust for sampling bias. 
+
+```{r}
+data(depress)
+head(depress)
+``` 
+The logistic Box-Cox model is fitted using the function, trained_model().
+
+```{r model}
+trained_model = lbc_train(
+  depression ~ mercury + # response variable, and primary predictor
+  age + factor(gender), # covariates
+  weight_column_name="weight", # the column name which contains the information about survey weight
+  data=depress, # data comes from package
+  svy_lambda_vector = seq(0, 2, length = 25),
+  num_cores=2 # since vignettes can only work with a max of two processes
+)
+summary(trained_model)
+```
+
+The output shows the coefficients and the standard error values for all the predictors. Categorical variables are automatically one-hot encoded during the model fitting process.
+
+The above is the intended use case for when we do not have initial values for the coefficients. We use `svyglm` from the `survey` package [[1]](#1) to estimate the initial values. The training process for `svyglm` utilizes a lambda parameter that we search over a reasonable range to optimize the model.
+
+We incorporate parallelized computing option in the model by setting the `num_cores` param to the number of cores we want to use for training. Please use the default `num_cores` value (= 1) if you do not wish to parallelize.
+
+However, if you have an initial guess for the coefficients, you can include it as a vector and bypass the initial value estimation described above entirely! We do this with the below.
+
+```{r model_init}
+init = c(0.0984065403, -0.0227734374, 0.0000000000, -0.0002426025, -0.0316484585)
+trained_model = lbc_train(
+  depression ~ mercury + # response variable, and primary predictor
+  age + factor(gender), # covariates
+  weight_column_name="weight", # the column name which contains the information about survey weight
+  data=depress, # data comes from package
+  init=init # initial guess for the coefficients
+)
+summary(trained_model)
+```
+
+## Citations
+<a id="1">[1]</a>
+Lumley, T. (2011). Complex surveys: a guide to analysis using R (Vol. 565). John Wiley & Sons.
+
+<a id="2">[2]</a>
+Xing, L., Zhang, X., Burstyn, I., & Gustafson, P. (2021). On logistic Box–Cox regression for flexibly estimating the shape and strength of exposure‐disease relationships. Canadian Journal of Statistics, 49(3), 808-825.

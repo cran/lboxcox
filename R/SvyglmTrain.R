@@ -7,8 +7,7 @@ svyglm_train = function(formula, data, lambda_vector=seq(0, 2, length = 100), we
   if (is.null(weight_column_name)){
     design = svydesign(ids=~1, data=data)
   }else{
-    weight_formula = as.formula(paste("~", weight_column_name))
-    design = svydesign(ids=~1, weights=weight_formula, data=data)
+    design = svydesign(ids=~1, weights=weight_column_name, data=data)
   }
 
   train_func = function(lambda){
@@ -45,6 +44,12 @@ get_inits_from_model = function(model){
   inits <- rep(NA, length(coef(model))+1)
   inits[1:2] <- coef(model)[1:2]
   inits[3] <- model$lambda
-  inits[4:(length(coef(model))+1)] <- coef(model)[-c(1:2)]
+  if((length(coef(model))+1) >= 4){
+    inits[4:(length(coef(model))+1)] <- coef(model)[-c(1:2)]
+  }
   inits
 }
+
+
+
+

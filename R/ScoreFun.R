@@ -23,3 +23,4 @@ ScoreFun <- function(bb, ixx, iyy, iw, iZZ){
   c(sum(iw*(iyy - iP)), sum(iw*((iyy - iP)*iv)), sum(iw*((iyy - iP)*bb[2]*de.lamda)),
     (iw*(iyy-iP))%*%iZZ)/sum(iw)
 }
+

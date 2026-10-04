@@ -13,7 +13,7 @@
 <meta name="author" content="Li Xing, Shiyu Xu, Jing Wang, Kohlton Booth, Xuekui Zhang, Igor Burstyn, Paul Gustafson" />
 
 
-<title>lboxcox: an R package for the logistic Box-Cox model</title>
+<title>Introduction to Logistic Box-Cox Regression with lboxcox</title>
 
 <script>// Pandoc 2.9 adds attributes on both header and div. We remove the former (to
 // be compatible with the behavior of Pandoc < 2.8).
@@ -49,6 +49,7 @@ overflow: visible;
 }
 </style>
 <style type="text/css" data-origin="pandoc">
+html { -webkit-text-size-adjust: 100%; }
 pre > code.sourceCode { white-space: pre; position: relative; }
 pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
 pre > code.sourceCode > span:empty { height: 1.2em; }
@@ -337,128 +338,360 @@ code > span.er { color: #a61717; background-color: #e3d2d2; }
 
 
 
-<h1 class="title toc-ignore">lboxcox: an R package for the logistic
-Box-Cox model</h1>
+<h1 class="title toc-ignore">Introduction to Logistic Box-Cox Regression
+with lboxcox</h1>
 <h4 class="author">Li Xing, Shiyu Xu, Jing Wang, Kohlton Booth, Xuekui
 Zhang, Igor Burstyn, Paul Gustafson</h4>
-<h4 class="date">2023-12-12</h4>
 
 
+<div id="TOC">
+<ul>
+<li><a href="#introduction" id="toc-introduction">Introduction</a></li>
+<li><a href="#model" id="toc-model">Model</a>
+<ul>
+<li><a href="#parameter-interpretation" id="toc-parameter-interpretation">Parameter interpretation</a></li>
+<li><a href="#median-effect" id="toc-median-effect">Median
+effect</a></li>
+</ul></li>
+<li><a href="#data-requirements" id="toc-data-requirements">Data
+requirements</a></li>
+<li><a href="#fitting-the-models" id="toc-fitting-the-models">Fitting
+the models</a>
+<ul>
+<li><a href="#lbc-ml-single-fit-maximum-likelihood" id="toc-lbc-ml-single-fit-maximum-likelihood">LBC-ML: single-fit maximum
+likelihood</a></li>
+<li><a href="#lbc-ms-multi-start-fitting" id="toc-lbc-ms-multi-start-fitting">LBC-MS: multi-start fitting</a></li>
+<li><a href="#lbc-el-and-lbc-cm-bootstrap-aggregation" id="toc-lbc-el-and-lbc-cm-bootstrap-aggregation">LBC-EL and LBC-CM:
+bootstrap aggregation</a></li>
+</ul></li>
+<li><a href="#prediction-and-model-evaluation" id="toc-prediction-and-model-evaluation">Prediction and model
+evaluation</a></li>
+<li><a href="#built-in-nhanes-data" id="toc-built-in-nhanes-data">Built-in NHANES data</a></li>
+<li><a href="#main-functions" id="toc-main-functions">Main
+functions</a></li>
+<li><a href="#references" id="toc-references">References</a></li>
+</ul>
+</div>
 
 <div id="introduction" class="section level2">
 <h2>Introduction</h2>
-<p>The lboxcox package is developed based on our recent research
-publication (Xing et. al <a href="#id_2">[2]</a>). We proposed a
-logistic Box-Cox model by adding a shape parameter to a routine logistic
-regression model to handle a more flexible relationship between log odds
-and its systematic component. Below we provide instructions for users on
-how to fit the logistic Box-Cox model using our lboxcox package.</p>
+<p>The <code>lboxcox</code> package fits logistic Box-Cox (LBC)
+regression models for a binary outcome and a strictly positive
+continuous predictor. The model is useful when the predictor-outcome
+relationship may be nonlinear but a compact, interpretable parametric
+form is preferred to a fully nonparametric fit.</p>
+<p>Ordinary logistic regression assumes that a continuous predictor has
+a linear effect on the log-odds scale. LBC regression relaxes this
+assumption by applying a Box-Cox transformation to the primary predictor
+and estimating its shape parameter from the data. The original model and
+its median-effect interpretation were developed by Xing et
+al. (2021).</p>
+<p>Estimating the shape parameter requires nonlinear optimization, which
+can be sensitive to starting values. The current package therefore also
+implements the multi-start and bootstrap-aggregation procedures
+developed by Xu, Wang, and Xing. These additions provide four related
+fitting strategies: single-fit maximum likelihood (LBC-ML), multi-start
+fitting (LBC-MS), bootstrap aggregation of LBC-ML fits (LBC-EL), and
+bootstrap aggregation with multi-start fitting within each resample
+(LBC-CM).</p>
 </div>
-<div id="data-example" class="section level2">
-<h2>Data Example</h2>
-<div class="sourceCode" id="cb1"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(lboxcox)</span></code></pre></div>
-<p>In the library, there is a dataset called depress. It was from the
-National Health and Nutrition Examination Survey (NHANES) (Xing et. al
-<a href="#id_2">[2]</a>). The outcome is a binary indicator for
-depression in the data, and the main predictor is the blood mercury
-level, which requires an extra shape parameter to accommodate the
-nonlinear association. And the other variables are age, gender, and
-weight. The weight variable contains sampling weights, which would be
-used to adjust for sampling bias.</p>
-<div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">data</span>(depress)</span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="fu">head</span>(depress)</span>
-<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;   depression mercury age gender    weight</span></span>
-<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 1          0    7.13  37      1 18979.728</span></span>
-<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 2          0    1.40  60      0 19877.753</span></span>
-<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 3          0    2.46  60      0 16671.291</span></span>
-<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 4          0    6.24  55      0  3749.384</span></span>
-<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 5          0   11.20  64      1 66567.646</span></span>
-<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 6          0    1.48  51      1  5494.848</span></span></code></pre></div>
-<p>The logistic Box-Cox model is fitted using the function,
-trained_model().</p>
+<div id="model" class="section level2">
+<h2>Model</h2>
+<p>For a strictly positive predictor <span class="math inline">\(x\)</span>, the Box-Cox transformation is</p>
+<p><span class="math display">\[
+x^{(\lambda)} =
+\begin{cases}
+(x^\lambda - 1)/\lambda, &amp; \lambda \ne 0, \\
+\log(x), &amp; \lambda = 0.
+\end{cases}
+\]</span></p>
+<p>For a binary outcome <span class="math inline">\(Y_i\)</span>, a
+positive primary predictor <span class="math inline">\(X_i\)</span>, and
+adjustment covariates <span class="math inline">\(\mathbf Z_i\)</span>,
+the LBC model is</p>
+<p><span class="math display">\[
+\operatorname{logit}\{\Pr(Y_i=1)\}
+= \beta_0 + \beta_1 X_i^{(\lambda)}
++ \boldsymbol{\gamma}^{\mathsf T}\mathbf Z_i.
+\]</span></p>
+<p>In a package formula such as <code>y ~ x + z1 + z2</code>, the first
+term on the right-hand side is treated as the primary predictor and
+receives the Box-Cox transformation. The remaining terms are adjustment
+covariates.</p>
+<div id="parameter-interpretation" class="section level3">
+<h3>Parameter interpretation</h3>
+<p>The shape parameter <span class="math inline">\(\lambda\)</span>
+controls the form of the predictor-outcome relationship. Values near 0
+correspond to a logarithmic transformation, <span class="math inline">\(\lambda=1\)</span> gives a linear term, and larger
+values permit increasingly convex relationships. The coefficient <span class="math inline">\(\beta_1\)</span> gives the direction and strength
+of association on the transformed scale and should be interpreted
+together with the fitted value of <span class="math inline">\(\lambda\)</span>.</p>
 </div>
-<div id="maxlik-model" class="section level2">
-<h2>MaxLik model</h2>
-<div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>trained_model <span class="ot">=</span> <span class="fu">lbc_maxlik</span>(</span>
-<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>  depression <span class="sc">~</span> mercury <span class="sc">+</span> <span class="co"># response variable, and primary predictor</span></span>
-<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>  age <span class="sc">+</span> <span class="fu">factor</span>(gender), <span class="co"># covariates</span></span>
-<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>  <span class="at">weight_column_name=</span><span class="st">&quot;weight&quot;</span>, <span class="co"># the column name which contains the information about survey weight </span></span>
-<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>  <span class="at">data=</span>depress, <span class="co"># data comes from package</span></span>
-<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>  <span class="at">svy_lambda_vector =</span> <span class="fu">seq</span>(<span class="dv">0</span>, <span class="dv">2</span>, <span class="at">length =</span> <span class="dv">25</span>),</span>
-<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>  <span class="at">init_lambda_vector =</span> <span class="fu">seq</span>(<span class="dv">0</span>, <span class="dv">2</span>, <span class="at">length =</span> <span class="dv">100</span>),</span>
-<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>  <span class="at">num_cores=</span><span class="dv">2</span>, <span class="co"># since vignettes can only work with a max of two processes</span></span>
-<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a>  <span class="at">seed =</span> <span class="dv">1</span>,</span>
-<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a>  <span class="at">iterlim =</span> <span class="dv">100</span>,</span>
-<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a>  <span class="at">timelim =</span> <span class="dv">10</span></span>
-<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a>)</span>
-<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a><span class="fu">summary</span>(trained_model)</span>
-<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; --------------------------------------------</span></span>
-<span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; Maximum Likelihood estimation</span></span>
-<span id="cb3-16"><a href="#cb3-16" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; Newton-Raphson maximisation, 5 iterations</span></span>
-<span id="cb3-17"><a href="#cb3-17" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; Return code 1: gradient close to zero (gradtol)</span></span>
-<span id="cb3-18"><a href="#cb3-18" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; Log-Likelihood: -41.14436 </span></span>
-<span id="cb3-19"><a href="#cb3-19" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 5  free parameters</span></span>
-<span id="cb3-20"><a href="#cb3-20" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; Estimates:</span></span>
-<span id="cb3-21"><a href="#cb3-21" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;                   Estimate Std. error t value Pr(&gt; t)</span></span>
-<span id="cb3-22"><a href="#cb3-22" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; Beta_0           -2.206758  12.233684  -0.180   0.857</span></span>
-<span id="cb3-23"><a href="#cb3-23" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; Beta_1           -0.365960   4.470466  -0.082   0.935</span></span>
-<span id="cb3-24"><a href="#cb3-24" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; Lambda            0.205635  16.899802   0.012   0.990</span></span>
-<span id="cb3-25"><a href="#cb3-25" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; age              -0.003513   0.231210  -0.015   0.988</span></span>
-<span id="cb3-26"><a href="#cb3-26" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; factor(gender)_1 -0.492110   8.073192  -0.061   0.951</span></span>
-<span id="cb3-27"><a href="#cb3-27" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; --------------------------------------------</span></span></code></pre></div>
-<p>The output shows the coefficients and the standard error values for
-all the predictors. Categorical variables are automatically one-hot
-encoded during the model fitting process.</p>
-<p>The above is the intended use case for when we do not have initial
-values for the coefficients. We use <code>svyglm</code> from the
-<code>survey</code> package <a href="#id_1">[1]</a> to estimate the
-initial values. The training process for <code>svyglm</code> utilizes a
-lambda parameter that we search over a reasonable range to optimize the
-model.</p>
-<p>We incorporate parallelized computing option in the model by setting
-the <code>num_cores</code> param to the number of cores we want to use
-for training. Please use the default <code>num_cores</code> value (= 1)
-if you do not wish to parallelize.</p>
-<p>However, if you have an initial guess for the coefficients, you can
-include it as a vector and bypass the initial value estimation described
-above entirely! We do this with the below.</p>
-<div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>init <span class="ot">=</span> <span class="fu">c</span>(<span class="fl">0.0984065403</span>, <span class="sc">-</span><span class="fl">0.0227734374</span>, <span class="fl">0.0000000000</span>, <span class="sc">-</span><span class="fl">0.0002426025</span>, <span class="sc">-</span><span class="fl">0.0316484585</span>)</span>
-<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>trained_model <span class="ot">=</span> <span class="fu">lbc_maxlik</span>(</span>
-<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>  depression <span class="sc">~</span> mercury <span class="sc">+</span> <span class="co"># response variable, and primary predictor</span></span>
-<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>  age <span class="sc">+</span> <span class="fu">factor</span>(gender), <span class="co"># covariates</span></span>
-<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>  <span class="at">weight_column_name=</span><span class="st">&quot;weight&quot;</span>, <span class="co"># the column name which contains the information about survey weight</span></span>
-<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>  <span class="at">data=</span>depress, <span class="co"># data comes from package</span></span>
-<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>  <span class="at">svy_lambda_vector =</span> <span class="fu">seq</span>(<span class="dv">0</span>, <span class="dv">2</span>, <span class="at">length =</span> <span class="dv">25</span>),</span>
-<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>  <span class="at">init_lambda_vector =</span> <span class="fu">seq</span>(<span class="dv">0</span>, <span class="dv">2</span>, <span class="at">length =</span> <span class="dv">100</span>),</span>
-<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>  <span class="at">num_cores=</span><span class="dv">2</span>, <span class="co"># since vignettes can only work with a max of two processes</span></span>
-<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>  <span class="at">seed =</span> <span class="dv">2023</span>,</span>
-<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a>  <span class="at">iterlim =</span> <span class="dv">100</span>,</span>
-<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a>  <span class="at">timelim =</span> <span class="dv">10</span></span>
-<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a>)</span>
-<span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a><span class="fu">summary</span>(trained_model)</span>
-<span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; --------------------------------------------</span></span>
-<span id="cb4-16"><a href="#cb4-16" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; Maximum Likelihood estimation</span></span>
-<span id="cb4-17"><a href="#cb4-17" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; Newton-Raphson maximisation, 5 iterations</span></span>
-<span id="cb4-18"><a href="#cb4-18" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; Return code 1: gradient close to zero (gradtol)</span></span>
-<span id="cb4-19"><a href="#cb4-19" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; Log-Likelihood: -41.14436 </span></span>
-<span id="cb4-20"><a href="#cb4-20" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 5  free parameters</span></span>
-<span id="cb4-21"><a href="#cb4-21" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; Estimates:</span></span>
-<span id="cb4-22"><a href="#cb4-22" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;                   Estimate Std. error t value Pr(&gt; t)</span></span>
-<span id="cb4-23"><a href="#cb4-23" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; Beta_0           -2.206758  12.233684  -0.180   0.857</span></span>
-<span id="cb4-24"><a href="#cb4-24" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; Beta_1           -0.365960   4.470466  -0.082   0.935</span></span>
-<span id="cb4-25"><a href="#cb4-25" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; Lambda            0.205635  16.899802   0.012   0.990</span></span>
-<span id="cb4-26"><a href="#cb4-26" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; age              -0.003513   0.231210  -0.015   0.988</span></span>
-<span id="cb4-27"><a href="#cb4-27" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; factor(gender)_1 -0.492110   8.073192  -0.061   0.951</span></span>
-<span id="cb4-28"><a href="#cb4-28" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; --------------------------------------------</span></span></code></pre></div>
+<div id="median-effect" class="section level3">
+<h3>Median effect</h3>
+<p>For an approximately log-normal predictor with log-scale location
+<span class="math inline">\(\mu\)</span>, the median effect on the
+original predictor scale is</p>
+<p><span class="math display">\[
+\Delta^* = \beta_1 \exp\{(\lambda-1)\mu\}.
+\]</span></p>
+<p><code>median_effect()</code> evaluates this summary at the weighted
+mean of the log predictor and returns a Wald-type 95% confidence
+interval. Direct maximum-likelihood fits use the joint likelihood
+Hessian. Profile-grid, cross-validation, and ensemble refits return an
+interval conditional on the selected lambda.</p>
 </div>
-<div id="citations" class="section level2">
-<h2>Citations</h2>
-<p><a id="1">[1]</a> Lumley, T. (2011). Complex surveys: a guide to
-analysis using R (Vol. 565). John Wiley &amp; Sons.</p>
-<p><a id="2">[2]</a> Xing, L., Zhang, X., Burstyn, I., &amp; Gustafson,
-P. (2021). On logistic Box–Cox regression for flexibly estimating the
-shape and strength of exposure‐disease relationships. Canadian Journal
-of Statistics, 49(3), 808-825.</p>
+</div>
+<div id="data-requirements" class="section level2">
+<h2>Data requirements</h2>
+<p>The response must be binary, and the primary continuous predictor
+must be strictly positive. <code>weight_column_name</code> may identify a
+column containing non-negative observation weights or be a numeric
+vector with one value per row. Use <code>NULL</code> or <code>1</code> for
+an unweighted analysis:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" tabindex="-1"></a>fit <span class="ot">&lt;-</span> <span class="fu">lbc_maxlik</span>(</span>
+<span id="cb1-2"><a href="#cb1-2" tabindex="-1"></a>  y <span class="sc">~</span> x <span class="sc">+</span> z1 <span class="sc">+</span> z2,</span>
+<span id="cb1-3"><a href="#cb1-3" tabindex="-1"></a>  <span class="at">weight_column_name =</span> <span class="cn">NULL</span>,</span>
+<span id="cb1-4"><a href="#cb1-4" tabindex="-1"></a>  <span class="at">data =</span> mydata</span>
+<span id="cb1-5"><a href="#cb1-5" tabindex="-1"></a>)</span></code></pre></div>
+<p>The package incorporates observation weights but does not accept
+survey strata or primary sampling-unit identifiers. The resulting fits
+are therefore sampling-weighted model estimates rather than complete
+design-based survey estimates.</p>
+</div>
+<div id="fitting-the-models" class="section level2">
+<h2>Fitting the models</h2>
+<div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" tabindex="-1"></a><span class="fu">library</span>(lboxcox)</span>
+<span id="cb2-2"><a href="#cb2-2" tabindex="-1"></a><span class="co">#&gt; Loading required package: survey</span></span>
+<span id="cb2-3"><a href="#cb2-3" tabindex="-1"></a><span class="co">#&gt; Loading required package: grid</span></span>
+<span id="cb2-4"><a href="#cb2-4" tabindex="-1"></a><span class="co">#&gt; Loading required package: Matrix</span></span>
+<span id="cb2-5"><a href="#cb2-5" tabindex="-1"></a><span class="co">#&gt; Loading required package: survival</span></span>
+<span id="cb2-6"><a href="#cb2-6" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb2-7"><a href="#cb2-7" tabindex="-1"></a><span class="co">#&gt; Attaching package: &#39;survey&#39;</span></span>
+<span id="cb2-8"><a href="#cb2-8" tabindex="-1"></a><span class="co">#&gt; The following object is masked from &#39;package:graphics&#39;:</span></span>
+<span id="cb2-9"><a href="#cb2-9" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb2-10"><a href="#cb2-10" tabindex="-1"></a><span class="co">#&gt;     dotchart</span></span>
+<span id="cb2-11"><a href="#cb2-11" tabindex="-1"></a><span class="fu">data</span>(depress)</span>
+<span id="cb2-12"><a href="#cb2-12" tabindex="-1"></a></span>
+<span id="cb2-13"><a href="#cb2-13" tabindex="-1"></a>formula_lbc <span class="ot">&lt;-</span> depression <span class="sc">~</span> mercury <span class="sc">+</span> age <span class="sc">+</span> <span class="fu">factor</span>(gender)</span></code></pre></div>
+<div id="lbc-ml-single-fit-maximum-likelihood" class="section level3">
+<h3>LBC-ML: single-fit maximum likelihood</h3>
+<p><code>lbc_maxlik()</code> fits one LBC model by maximum likelihood.
+By default, survey-weighted logistic fits over a lambda grid are used to
+construct a starting vector before direct likelihood maximization.</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" tabindex="-1"></a>fit_ml <span class="ot">&lt;-</span> <span class="fu">lbc_maxlik</span>(</span>
+<span id="cb3-2"><a href="#cb3-2" tabindex="-1"></a>  formula_lbc,</span>
+<span id="cb3-3"><a href="#cb3-3" tabindex="-1"></a>  <span class="at">weight_column_name =</span> <span class="st">&quot;weight&quot;</span>,</span>
+<span id="cb3-4"><a href="#cb3-4" tabindex="-1"></a>  <span class="at">data =</span> depress,</span>
+<span id="cb3-5"><a href="#cb3-5" tabindex="-1"></a>  <span class="at">seed =</span> <span class="dv">1</span></span>
+<span id="cb3-6"><a href="#cb3-6" tabindex="-1"></a>)</span>
+<span id="cb3-7"><a href="#cb3-7" tabindex="-1"></a></span>
+<span id="cb3-8"><a href="#cb3-8" tabindex="-1"></a>fit_ml<span class="sc">$</span>estimate</span>
+<span id="cb3-9"><a href="#cb3-9" tabindex="-1"></a><span class="co">#&gt;         Beta_0         Beta_1         Lambda            age factor(gender) </span></span>
+<span id="cb3-10"><a href="#cb3-10" tabindex="-1"></a><span class="co">#&gt;   -2.208855660   -0.365758960    0.203435933   -0.003480318   -0.491747914</span></span></code></pre></div>
+</div>
+<div id="lbc-ms-multi-start-fitting" class="section level3">
+<h3>LBC-MS: multi-start fitting</h3>
+<p><code>lbc_train_ms()</code> evaluates the likelihood from multiple
+starting lambda values, selects the lambda associated with the highest
+achieved log-likelihood, and returns a full-data weighted logistic refit
+conditional on that lambda.</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" tabindex="-1"></a>fit_ms <span class="ot">&lt;-</span> <span class="fu">lbc_train_ms</span>(</span>
+<span id="cb4-2"><a href="#cb4-2" tabindex="-1"></a>  formula_lbc,</span>
+<span id="cb4-3"><a href="#cb4-3" tabindex="-1"></a>  <span class="at">weight_column_name =</span> <span class="st">&quot;weight&quot;</span>,</span>
+<span id="cb4-4"><a href="#cb4-4" tabindex="-1"></a>  <span class="at">data =</span> depress,</span>
+<span id="cb4-5"><a href="#cb4-5" tabindex="-1"></a>  <span class="at">svy_lambda_vector =</span> <span class="fu">seq</span>(<span class="dv">0</span>, <span class="dv">2</span>, <span class="at">length.out =</span> <span class="dv">10</span>)</span>
+<span id="cb4-6"><a href="#cb4-6" tabindex="-1"></a>)</span>
+<span id="cb4-7"><a href="#cb4-7" tabindex="-1"></a></span>
+<span id="cb4-8"><a href="#cb4-8" tabindex="-1"></a>fit_ms<span class="sc">$</span>estimate</span>
+<span id="cb4-9"><a href="#cb4-9" tabindex="-1"></a><span class="co">#&gt;          Beta_0          Beta_1          Lambda             age factor(gender)1 </span></span>
+<span id="cb4-10"><a href="#cb4-10" tabindex="-1"></a><span class="co">#&gt;    -2.206312885    -0.365895449     0.208246689    -0.003513522    -0.492101233</span></span></code></pre></div>
+</div>
+<div id="lbc-el-and-lbc-cm-bootstrap-aggregation" class="section level3">
+<h3>LBC-EL and LBC-CM: bootstrap aggregation</h3>
+<p><code>lbc_train_bagging()</code> fits LBC-ML models to 100 bootstrap
+samples. This is the LBC-EL procedure. <code>lbc_train_all()</code>
+applies multi-start fitting within each bootstrap sample and implements
+LBC-CM; it is consequently more computationally intensive.</p>
+<p>Both functions return a list containing a full-data refit at the
+median of the bootstrap-specific lambda estimates, the individual
+bootstrap fits, and the number of bootstrap calls that did not return a
+usable fit. The median lambda is a descriptive summary. Ensemble
+predictions are obtained by averaging predicted probabilities across the
+available bootstrap fits.</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb5-0"><a href="#cb5-0" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">1</span>)</span>
+<span id="cb5-1"><a href="#cb5-1" tabindex="-1"></a>fit_el <span class="ot">&lt;-</span> <span class="fu">lbc_train_bagging</span>(</span>
+<span id="cb5-2"><a href="#cb5-2" tabindex="-1"></a>  formula_lbc,</span>
+<span id="cb5-3"><a href="#cb5-3" tabindex="-1"></a>  <span class="at">weight_column_name =</span> <span class="st">&quot;weight&quot;</span>,</span>
+<span id="cb5-4"><a href="#cb5-4" tabindex="-1"></a>  <span class="at">data =</span> depress,</span>
+<span id="cb5-5"><a href="#cb5-5" tabindex="-1"></a>  <span class="at">cores =</span> <span class="dv">2</span></span>
+<span id="cb5-6"><a href="#cb5-6" tabindex="-1"></a>)</span>
+<span id="cb5-7"><a href="#cb5-7" tabindex="-1"></a></span>
+<span id="cb5-8"><a href="#cb5-8" tabindex="-1"></a>fit_cm <span class="ot">&lt;-</span> <span class="fu">lbc_train_all</span>(</span>
+<span id="cb5-9"><a href="#cb5-9" tabindex="-1"></a>  formula_lbc,</span>
+<span id="cb5-10"><a href="#cb5-10" tabindex="-1"></a>  <span class="at">weight_column_name =</span> <span class="st">&quot;weight&quot;</span>,</span>
+<span id="cb5-11"><a href="#cb5-11" tabindex="-1"></a>  <span class="at">data =</span> depress,</span>
+<span id="cb5-12"><a href="#cb5-12" tabindex="-1"></a>  <span class="at">cores =</span> <span class="dv">2</span></span>
+<span id="cb5-13"><a href="#cb5-13" tabindex="-1"></a>)</span></code></pre></div>
+<p>The bootstrap examples are not evaluated when this vignette is built
+because each procedure fits 100 resampled datasets.</p>
+</div>
+</div>
+<div id="prediction-and-model-evaluation" class="section level2">
+<h2>Prediction and model evaluation</h2>
+<p>Use <code>lboxcox_maxLik.predict()</code> with an LBC-ML or LBC-MS
+fit. Use <code>lboxcox_maxLik_el.predict()</code> with an LBC-EL or
+LBC-CM result.</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" tabindex="-1"></a>p_ml <span class="ot">&lt;-</span> <span class="fu">lboxcox_maxLik.predict</span>(fit_ml, depress, formula_lbc)</span>
+<span id="cb6-2"><a href="#cb6-2" tabindex="-1"></a>p_ms <span class="ot">&lt;-</span> <span class="fu">lboxcox_maxLik.predict</span>(fit_ms, depress, formula_lbc)</span>
+<span id="cb6-3"><a href="#cb6-3" tabindex="-1"></a></span>
+<span id="cb6-4"><a href="#cb6-4" tabindex="-1"></a><span class="fu">head</span>(p_ml)</span>
+<span id="cb6-5"><a href="#cb6-5" tabindex="-1"></a><span class="co">#&gt;            [,1]</span></span>
+<span id="cb6-6"><a href="#cb6-6" tabindex="-1"></a><span class="co">#&gt; [1,] 0.02383239</span></span>
+<span id="cb6-7"><a href="#cb6-7" tabindex="-1"></a><span class="co">#&gt; [2,] 0.07275958</span></span>
+<span id="cb6-8"><a href="#cb6-8" tabindex="-1"></a><span class="co">#&gt; [3,] 0.05847010</span></span>
+<span id="cb6-9"><a href="#cb6-9" tabindex="-1"></a><span class="co">#&gt; [4,] 0.03872629</span></span>
+<span id="cb6-10"><a href="#cb6-10" tabindex="-1"></a><span class="co">#&gt; [5,] 0.01688090</span></span>
+<span id="cb6-11"><a href="#cb6-11" tabindex="-1"></a><span class="co">#&gt; [6,] 0.04620477</span></span></code></pre></div>
+<div class="sourceCode" id="cb7"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" tabindex="-1"></a>p_el <span class="ot">&lt;-</span> <span class="fu">lboxcox_maxLik_el.predict</span>(fit_el, depress, formula_lbc)</span></code></pre></div>
+<p><code>devr()</code> computes the sum of absolute deviance residuals
+(SADR). Lower values indicate better predictive performance when models
+are evaluated on the same observations.</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" tabindex="-1"></a><span class="fu">devr</span>(depress<span class="sc">$</span>depression, p_ml)</span>
+<span id="cb8-2"><a href="#cb8-2" tabindex="-1"></a><span class="co">#&gt; [1] 4718.065</span></span>
+<span id="cb8-3"><a href="#cb8-3" tabindex="-1"></a><span class="fu">devr</span>(depress<span class="sc">$</span>depression, p_ms)</span>
+<span id="cb8-4"><a href="#cb8-4" tabindex="-1"></a><span class="co">#&gt; [1] 4718.08</span></span></code></pre></div>
+<p>As an alternative to likelihood-based estimation,
+<code>lboxcox_cv.fit()</code> selects lambda from a user-supplied grid
+by minimizing cross-validated SADR.</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" tabindex="-1"></a>fit_cv <span class="ot">&lt;-</span> <span class="fu">lboxcox_cv.fit</span>(</span>
+<span id="cb9-2"><a href="#cb9-2" tabindex="-1"></a>  <span class="at">mydata =</span> depress,</span>
+<span id="cb9-3"><a href="#cb9-3" tabindex="-1"></a>  <span class="at">ixx =</span> depress<span class="sc">$</span>mercury,</span>
+<span id="cb9-4"><a href="#cb9-4" tabindex="-1"></a>  <span class="at">iyy =</span> depress<span class="sc">$</span>depression,</span>
+<span id="cb9-5"><a href="#cb9-5" tabindex="-1"></a>  <span class="at">formula =</span> formula_lbc,</span>
+<span id="cb9-6"><a href="#cb9-6" tabindex="-1"></a>  <span class="at">weight_column_name =</span> <span class="st">&quot;weight&quot;</span>,</span>
+<span id="cb9-7"><a href="#cb9-7" tabindex="-1"></a>  <span class="at">lambda_vector =</span> <span class="fu">seq</span>(<span class="dv">0</span>, <span class="dv">2</span>, <span class="at">length.out =</span> <span class="dv">10</span>),</span>
+<span id="cb9-8"><a href="#cb9-8" tabindex="-1"></a>  <span class="at">k =</span> <span class="dv">5</span></span>
+<span id="cb9-9"><a href="#cb9-9" tabindex="-1"></a>)</span>
+<span id="cb9-10"><a href="#cb9-10" tabindex="-1"></a></span>
+<span id="cb9-11"><a href="#cb9-11" tabindex="-1"></a>p_cv <span class="ot">&lt;-</span> <span class="fu">lboxcox_cv.predict</span>(fit_cv, depress, formula_lbc)</span></code></pre></div>
+<p>For a direct LBC-ML fit, the median-effect summary is obtained
+with:</p>
+<div class="sourceCode" id="cb10"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1" tabindex="-1"></a><span class="fu">median_effect</span>(</span>
+<span id="cb10-2"><a href="#cb10-2" tabindex="-1"></a>  formula_lbc,</span>
+<span id="cb10-3"><a href="#cb10-3" tabindex="-1"></a>  <span class="at">weight_column_name =</span> <span class="st">&quot;weight&quot;</span>,</span>
+<span id="cb10-4"><a href="#cb10-4" tabindex="-1"></a>  <span class="at">data =</span> depress,</span>
+<span id="cb10-5"><a href="#cb10-5" tabindex="-1"></a>  <span class="at">trained_model =</span> fit_ml</span>
+<span id="cb10-6"><a href="#cb10-6" tabindex="-1"></a>)</span>
+<span id="cb10-7"><a href="#cb10-7" tabindex="-1"></a><span class="co">#&gt; median effect  lower 95% ci  upper 95% ci </span></span>
+<span id="cb10-8"><a href="#cb10-8" tabindex="-1"></a><span class="co">#&gt;    -0.3666334    -0.4616603    -0.2716064</span></span></code></pre></div>
+</div>
+<div id="built-in-nhanes-data" class="section level2">
+<h2>Built-in NHANES data</h2>
+<p>The bundled <code>depress</code> data frame contains the 8,893 adults
+aged 20 years or older used in the NHANES application. The analytic
+sample combines the 2005–2006 and 2007–2008 survey cycles and
+contains:</p>
+<ul>
+<li><code>depression</code>: indicator equal to 1 for a Patient Health
+Questionnaire-9 (PHQ-9) score of at least 10;</li>
+<li><code>mercury</code>: total blood mercury concentration in
+micrograms per litre;</li>
+<li><code>age</code>: age in years;</li>
+<li><code>gender</code>: 1 for male and 0 for female; and</li>
+<li><code>weight</code>: four-year Day 1 dietary sampling weight, formed
+as <code>WTDRD1 / 2</code> for the two combined cycles.</li>
+</ul>
+<div class="sourceCode" id="cb11"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1" tabindex="-1"></a><span class="fu">summary</span>(depress)</span>
+<span id="cb11-2"><a href="#cb11-2" tabindex="-1"></a><span class="co">#&gt;    depression         mercury            age            gender      </span></span>
+<span id="cb11-3"><a href="#cb11-3" tabindex="-1"></a><span class="co">#&gt;  Min.   :0.00000   Min.   : 0.140   Min.   :20.00   Min.   :0.0000  </span></span>
+<span id="cb11-4"><a href="#cb11-4" tabindex="-1"></a><span class="co">#&gt;  1st Qu.:0.00000   1st Qu.: 0.490   1st Qu.:34.00   1st Qu.:0.0000  </span></span>
+<span id="cb11-5"><a href="#cb11-5" tabindex="-1"></a><span class="co">#&gt;  Median :0.00000   Median : 0.890   Median :49.00   Median :0.0000  </span></span>
+<span id="cb11-6"><a href="#cb11-6" tabindex="-1"></a><span class="co">#&gt;  Mean   :0.08074   Mean   : 1.478   Mean   :49.47   Mean   :0.4871  </span></span>
+<span id="cb11-7"><a href="#cb11-7" tabindex="-1"></a><span class="co">#&gt;  3rd Qu.:0.00000   3rd Qu.: 1.670   3rd Qu.:64.00   3rd Qu.:1.0000  </span></span>
+<span id="cb11-8"><a href="#cb11-8" tabindex="-1"></a><span class="co">#&gt;  Max.   :1.00000   Max.   :38.700   Max.   :85.00   Max.   :1.0000  </span></span>
+<span id="cb11-9"><a href="#cb11-9" tabindex="-1"></a><span class="co">#&gt;      weight        </span></span>
+<span id="cb11-10"><a href="#cb11-10" tabindex="-1"></a><span class="co">#&gt;  Min.   :   293.9  </span></span>
+<span id="cb11-11"><a href="#cb11-11" tabindex="-1"></a><span class="co">#&gt;  1st Qu.:  6893.1  </span></span>
+<span id="cb11-12"><a href="#cb11-12" tabindex="-1"></a><span class="co">#&gt;  Median : 15051.3  </span></span>
+<span id="cb11-13"><a href="#cb11-13" tabindex="-1"></a><span class="co">#&gt;  Mean   : 21598.5  </span></span>
+<span id="cb11-14"><a href="#cb11-14" tabindex="-1"></a><span class="co">#&gt;  3rd Qu.: 27847.6  </span></span>
+<span id="cb11-15"><a href="#cb11-15" tabindex="-1"></a><span class="co">#&gt;  Max.   :169230.1</span></span></code></pre></div>
+<p>See <code>?depress</code> for the variable definitions and source
+details.</p>
+</div>
+<div id="main-functions" class="section level2">
+<h2>Main functions</h2>
+<table>
+<colgroup>
+<col width="50%" />
+<col width="50%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th align="left">Function</th>
+<th align="left">Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left"><code>lbc_maxlik()</code></td>
+<td align="left">Fit one LBC model by maximum likelihood</td>
+</tr>
+<tr class="even">
+<td align="left"><code>lbc_train_ms()</code></td>
+<td align="left">Fit an LBC model from multiple starting values</td>
+</tr>
+<tr class="odd">
+<td align="left"><code>lbc_train_bagging()</code></td>
+<td align="left">Fit the LBC-EL bootstrap procedure</td>
+</tr>
+<tr class="even">
+<td align="left"><code>lbc_train_all()</code></td>
+<td align="left">Fit the LBC-CM combined procedure</td>
+</tr>
+<tr class="odd">
+<td align="left"><code>lboxcox_maxLik.predict()</code></td>
+<td align="left">Predict from an LBC-ML or LBC-MS fit</td>
+</tr>
+<tr class="even">
+<td align="left"><code>lboxcox_maxLik_el.predict()</code></td>
+<td align="left">Average predictions across bootstrap fits</td>
+</tr>
+<tr class="odd">
+<td align="left"><code>lboxcox_cv.fit()</code></td>
+<td align="left">Select lambda by cross-validated SADR</td>
+</tr>
+<tr class="even">
+<td align="left"><code>lboxcox_cv.predict()</code></td>
+<td align="left">Predict from a cross-validated fit</td>
+</tr>
+<tr class="odd">
+<td align="left"><code>devr()</code></td>
+<td align="left">Calculate SADR</td>
+</tr>
+<tr class="even">
+<td align="left"><code>median_effect()</code></td>
+<td align="left">Calculate the median-effect summary and confidence
+interval</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div id="references" class="section level2">
+<h2>References</h2>
+<p>Box, G. E. P., &amp; Cox, D. R. (1964). An analysis of
+transformations. <em>Journal of the Royal Statistical Society: Series B
+(Methodological)</em>, 26(2), 211–243.</p>
+<p>Xing, L., Zhang, X., Burstyn, I., &amp; Gustafson, P. (2021). On
+logistic Box-Cox regression for flexibly estimating the shape and
+strength of exposure-disease relationships. <em>Canadian Journal of
+Statistics</em>, 49(3), 808–825. <a href="https://doi.org/10.1002/cjs.11587" class="uri">https://doi.org/10.1002/cjs.11587</a></p>
+<p>Xu, S., Wang, J., &amp; Xing, L. <em>Ensemble Logistic Box-Cox Model
+for Improved Prediction and Estimation</em>. Manuscript in
+preparation.</p>
+<p>Lumley, T. (2011). <em>Complex Surveys: A Guide to Analysis Using
+R</em>. John Wiley &amp; Sons.</p>
 </div>
 
 

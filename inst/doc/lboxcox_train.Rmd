@@ -1,12 +1,13 @@
 ---
-title: "lboxcox: an R package for the logistic Box-Cox model"
+title: "Introduction to Logistic Box-Cox Regression with lboxcox"
 author:
   - Li Xing, Shiyu Xu, Jing Wang, Kohlton Booth, Xuekui Zhang, Igor Burstyn, Paul Gustafson
-date:
-  - 2023-12-12
-output: rmarkdown::html_vignette
+output:
+  rmarkdown::html_vignette:
+    toc: true
+    toc_depth: 3
 vignette: >
-  %\VignetteIndexEntry{lboxcox_train}
+  %\VignetteIndexEntry{Introduction to Logistic Box-Cox Regression with lboxcox}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---
@@ -15,72 +16,276 @@ vignette: >
 knitr::opts_chunk$set(
   collapse = TRUE,
   comment = "#>",
-  warning=FALSE, 
-  message=FALSE
+  warning = FALSE
 )
 ```
 
 ## Introduction
-The lboxcox package is developed based on our recent research publication (Xing et. al [[2]](#2)). We proposed a logistic Box-Cox model by adding a shape parameter to a routine logistic regression model to handle a more flexible relationship between log odds and its systematic component. Below we provide instructions for users on how to fit the logistic Box-Cox model using our lboxcox package. 
 
-## Data Example
+The `lboxcox` package fits logistic Box-Cox (LBC) regression models for a
+binary outcome and a strictly positive continuous predictor. The model is
+useful when the predictor-outcome relationship may be nonlinear but a compact,
+interpretable parametric form is preferred to a fully nonparametric fit.
+
+Ordinary logistic regression assumes that a continuous predictor has a linear
+effect on the log-odds scale. LBC regression relaxes this assumption by applying
+a Box-Cox transformation to the primary predictor and estimating its shape
+parameter from the data. The original model and its median-effect
+interpretation were developed by Xing et al. (2021).
+
+Estimating the shape parameter requires nonlinear optimization, which can be
+sensitive to starting values. The current package therefore also implements the
+multi-start and bootstrap-aggregation procedures developed by Xu, Wang, and
+Xing. These additions provide four related fitting strategies: single-fit
+maximum likelihood (LBC-ML), multi-start fitting (LBC-MS), bootstrap aggregation
+of LBC-ML fits (LBC-EL), and bootstrap aggregation with multi-start fitting
+within each resample (LBC-CM).
+
+## Model
+
+For a strictly positive predictor $x$, the Box-Cox transformation is
+
+$$
+x^{(\lambda)} =
+\begin{cases}
+(x^\lambda - 1)/\lambda, & \lambda \ne 0, \\
+\log(x), & \lambda = 0.
+\end{cases}
+$$
+
+For a binary outcome $Y_i$, a positive primary predictor $X_i$, and adjustment
+covariates $\mathbf Z_i$, the LBC model is
+
+$$
+\operatorname{logit}\{\Pr(Y_i=1)\}
+= \beta_0 + \beta_1 X_i^{(\lambda)}
++ \boldsymbol{\gamma}^{\mathsf T}\mathbf Z_i.
+$$
+
+In a package formula such as `y ~ x + z1 + z2`, the first term on the
+right-hand side is treated as the primary predictor and receives the Box-Cox
+transformation. The remaining terms are adjustment covariates.
+
+### Parameter interpretation
+
+The shape parameter $\lambda$ controls the form of the predictor-outcome
+relationship. Values near 0 correspond to a logarithmic transformation,
+$\lambda=1$ gives a linear term, and larger values permit increasingly convex
+relationships. The coefficient $\beta_1$ gives the direction and strength of
+association on the transformed scale and should be interpreted together with
+the fitted value of $\lambda$.
+
+### Median effect
+
+For an approximately log-normal predictor with log-scale location $\mu$, the
+median effect on the original predictor scale is
+
+$$
+\Delta^* = \beta_1 \exp\{(\lambda-1)\mu\}.
+$$
+
+`median_effect()` evaluates this summary at the weighted mean of the log
+predictor and returns a Wald-type 95% confidence interval. Direct
+maximum-likelihood fits use the joint likelihood Hessian. Profile-grid,
+cross-validation, and ensemble refits return an interval conditional on the
+selected lambda.
+
+## Data requirements
+
+The response must be binary, and the primary continuous predictor must be
+strictly positive. `weight_column_name` may identify a column containing
+non-negative observation weights or be a numeric vector with one value per
+row. Use `NULL` or `1` for an unweighted analysis:
+
+```{r weights-example, eval = FALSE}
+fit <- lbc_maxlik(
+  y ~ x + z1 + z2,
+  weight_column_name = NULL,
+  data = mydata
+)
+```
+
+The package incorporates observation weights but does not accept survey strata
+or primary sampling-unit identifiers. The resulting fits are therefore
+sampling-weighted model estimates rather than complete design-based survey
+estimates.
+
+## Fitting the models
+
 ```{r setup}
 library(lboxcox)
-```
-
-In the library, there is a dataset called depress. It was from the National Health and Nutrition Examination Survey (NHANES) (Xing et. al [[2]](#2)). The outcome is a binary indicator for depression in the data, and the main predictor is the blood mercury level, which requires an extra shape parameter to accommodate the nonlinear association. And the other variables are age, gender, and weight. The weight variable contains sampling weights, which would be used to adjust for sampling bias. 
-
-```{r}
 data(depress)
-head(depress)
-``` 
-The logistic Box-Cox model is fitted using the function, trained_model().
 
-## MaxLik model
-```{r model}
-trained_model = lbc_maxlik(
-  depression ~ mercury + # response variable, and primary predictor
-  age + factor(gender), # covariates
-  weight_column_name="weight", # the column name which contains the information about survey weight 
-  data=depress, # data comes from package
-  svy_lambda_vector = seq(0, 2, length = 25),
-  init_lambda_vector = seq(0, 2, length = 100),
-  num_cores=2, # since vignettes can only work with a max of two processes
-  seed = 1,
-  iterlim = 100,
-  timelim = 10
-)
-summary(trained_model)
+formula_lbc <- depression ~ mercury + age + factor(gender)
 ```
 
-The output shows the coefficients and the standard error values for all the predictors. Categorical variables are automatically one-hot encoded during the model fitting process.
+### LBC-ML: single-fit maximum likelihood
 
-The above is the intended use case for when we do not have initial values for the coefficients. We use `svyglm` from the `survey` package [[1]](#1) to estimate the initial values. The training process for `svyglm` utilizes a lambda parameter that we search over a reasonable range to optimize the model.
+`lbc_maxlik()` fits one LBC model by maximum likelihood. By default,
+survey-weighted logistic fits over a lambda grid are used to construct a
+starting vector before direct likelihood maximization.
 
-We incorporate parallelized computing option in the model by setting the `num_cores` param to the number of cores we want to use for training. Please use the default `num_cores` value (= 1) if you do not wish to parallelize.
-
-However, if you have an initial guess for the coefficients, you can include it as a vector and bypass the initial value estimation described above entirely! We do this with the below.
-
-```{r model_init}
-init = c(0.0984065403, -0.0227734374, 0.0000000000, -0.0002426025, -0.0316484585)
-trained_model = lbc_maxlik(
-  depression ~ mercury + # response variable, and primary predictor
-  age + factor(gender), # covariates
-  weight_column_name="weight", # the column name which contains the information about survey weight
-  data=depress, # data comes from package
-  svy_lambda_vector = seq(0, 2, length = 25),
-  init_lambda_vector = seq(0, 2, length = 100),
-  num_cores=2, # since vignettes can only work with a max of two processes
-  seed = 2023,
-  iterlim = 100,
-  timelim = 10
+```{r model-ml}
+fit_ml <- lbc_maxlik(
+  formula_lbc,
+  weight_column_name = "weight",
+  data = depress,
+  seed = 1
 )
-summary(trained_model)
+
+fit_ml$estimate
 ```
 
-## Citations
-<a id="1">[1]</a>
-Lumley, T. (2011). Complex surveys: a guide to analysis using R (Vol. 565). John Wiley & Sons.
+### LBC-MS: multi-start fitting
 
-<a id="2">[2]</a>
-Xing, L., Zhang, X., Burstyn, I., & Gustafson, P. (2021). On logistic Box–Cox regression for flexibly estimating the shape and strength of exposure‐disease relationships. Canadian Journal of Statistics, 49(3), 808-825.
+`lbc_train_ms()` evaluates the likelihood from multiple starting lambda values,
+selects the lambda associated with the highest achieved log-likelihood, and
+returns a full-data weighted logistic refit conditional on that lambda.
+
+```{r model-ms}
+fit_ms <- lbc_train_ms(
+  formula_lbc,
+  weight_column_name = "weight",
+  data = depress,
+  svy_lambda_vector = seq(0, 2, length.out = 10)
+)
+
+fit_ms$estimate
+```
+
+### LBC-EL and LBC-CM: bootstrap aggregation
+
+`lbc_train_bagging()` fits LBC-ML models to 100 bootstrap samples. This is the
+LBC-EL procedure. `lbc_train_all()` applies multi-start fitting within each
+bootstrap sample and implements LBC-CM; it is consequently more computationally
+intensive.
+
+Both functions return a list containing a full-data refit at the median of the
+bootstrap-specific lambda estimates, the individual bootstrap fits, and the
+number of bootstrap calls that did not return a usable fit. The median lambda
+is a descriptive summary. Ensemble predictions are obtained by averaging
+predicted probabilities across the available bootstrap fits.
+
+```{r model-el, eval = FALSE}
+set.seed(1)
+fit_el <- lbc_train_bagging(
+  formula_lbc,
+  weight_column_name = "weight",
+  data = depress,
+  cores = 2
+)
+
+fit_cm <- lbc_train_all(
+  formula_lbc,
+  weight_column_name = "weight",
+  data = depress,
+  cores = 2
+)
+```
+
+The bootstrap examples are not evaluated when this vignette is built because
+each procedure fits 100 resampled datasets.
+
+## Prediction and model evaluation
+
+Use `lboxcox_maxLik.predict()` with an LBC-ML or LBC-MS fit. Use
+`lboxcox_maxLik_el.predict()` with an LBC-EL or LBC-CM result.
+
+```{r predict}
+p_ml <- lboxcox_maxLik.predict(fit_ml, depress, formula_lbc)
+p_ms <- lboxcox_maxLik.predict(fit_ms, depress, formula_lbc)
+
+head(p_ml)
+```
+
+```{r predict-el, eval = FALSE}
+p_el <- lboxcox_maxLik_el.predict(fit_el, depress, formula_lbc)
+```
+
+`devr()` computes the sum of absolute deviance residuals (SADR). Lower values
+indicate better predictive performance when models are evaluated on the same
+observations.
+
+```{r devr}
+devr(depress$depression, p_ml)
+devr(depress$depression, p_ms)
+```
+
+As an alternative to likelihood-based estimation, `lboxcox_cv.fit()` selects
+lambda from a user-supplied grid by minimizing cross-validated SADR.
+
+```{r model-cv, eval = FALSE}
+fit_cv <- lboxcox_cv.fit(
+  mydata = depress,
+  ixx = depress$mercury,
+  iyy = depress$depression,
+  formula = formula_lbc,
+  weight_column_name = "weight",
+  lambda_vector = seq(0, 2, length.out = 10),
+  k = 5
+)
+
+p_cv <- lboxcox_cv.predict(fit_cv, depress, formula_lbc)
+```
+
+For a direct LBC-ML fit, the median-effect summary is obtained with:
+
+```{r median-effect}
+median_effect(
+  formula_lbc,
+  weight_column_name = "weight",
+  data = depress,
+  trained_model = fit_ml
+)
+```
+
+## Built-in NHANES data
+
+The bundled `depress` data frame contains the 8,893 adults aged 20 years or
+older used in the NHANES application. The analytic sample combines the
+2005--2006 and 2007--2008 survey cycles and contains:
+
+- `depression`: indicator equal to 1 for a Patient Health Questionnaire-9
+  (PHQ-9) score of at least 10;
+- `mercury`: total blood mercury concentration in micrograms per litre;
+- `age`: age in years;
+- `gender`: 1 for male and 0 for female; and
+- `weight`: four-year Day 1 dietary sampling weight, formed as `WTDRD1 / 2`
+  for the two combined cycles.
+
+```{r data-summary}
+summary(depress)
+```
+
+See `?depress` for the variable definitions and source details.
+
+## Main functions
+
+| Function | Purpose |
+|:--|:--|
+| `lbc_maxlik()` | Fit one LBC model by maximum likelihood |
+| `lbc_train_ms()` | Fit an LBC model from multiple starting values |
+| `lbc_train_bagging()` | Fit the LBC-EL bootstrap procedure |
+| `lbc_train_all()` | Fit the LBC-CM combined procedure |
+| `lboxcox_maxLik.predict()` | Predict from an LBC-ML or LBC-MS fit |
+| `lboxcox_maxLik_el.predict()` | Average predictions across bootstrap fits |
+| `lboxcox_cv.fit()` | Select lambda by cross-validated SADR |
+| `lboxcox_cv.predict()` | Predict from a cross-validated fit |
+| `devr()` | Calculate SADR |
+| `median_effect()` | Calculate the median-effect summary and confidence interval |
+
+## References
+
+Box, G. E. P., & Cox, D. R. (1964). An analysis of transformations. *Journal
+of the Royal Statistical Society: Series B (Methodological)*, 26(2), 211--243.
+
+Xing, L., Zhang, X., Burstyn, I., & Gustafson, P. (2021). On logistic Box-Cox
+regression for flexibly estimating the shape and strength of exposure-disease
+relationships. *Canadian Journal of Statistics*, 49(3), 808--825.
+<https://doi.org/10.1002/cjs.11587>
+
+Xu, S., Wang, J., & Xing, L. *Ensemble Logistic Box-Cox Model for Improved
+Prediction and Estimation*. Manuscript in preparation.
+
+Lumley, T. (2011). *Complex Surveys: A Guide to Analysis Using R*. John Wiley
+& Sons.

@@ -1,0 +1,21 @@
+#' Depression dataset
+#'
+#' The depress data frame contains 8,893 adults aged 20 years or older from
+#' the 2005-2006 and 2007-2008 National Health and Nutrition Examination
+#' Survey (NHANES) cycles.
+#'
+#' @format Sample survey data with columns:
+#' \describe{
+#' \item{depression}{binary response variable equal to 1 for a Patient Health Questionnaire-9 (PHQ-9) score of at least 10 and 0 otherwise}
+#' \item{mercury}{total blood mercury concentration in micrograms per litre}
+#' \item{age}{age of the participant in years}
+#' \item{gender}{0 if the participant is female and 1 if the participant is male}
+#' \item{weight}{four-year Day 1 dietary sampling weight, formed as \code{WTDRD1 / 2} for the two combined NHANES cycles}
+#' }
+#' @source National Center for Health Statistics, NHANES 2005-2006 and
+#'   2007-2008. The analytic data were adapted from the data used by Xing,
+#'   L., Zhang, X., Burstyn, I., & Gustafson, P. (2021). On
+#'   logistic Box-Cox regression for flexibly estimating the shape and
+#'   strength of exposure-disease relationships. Canadian Journal of
+#'   Statistics, 49(3), 808-825.
+"depress"
